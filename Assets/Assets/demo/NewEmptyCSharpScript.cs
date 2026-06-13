@@ -8,5 +8,6 @@ public class NewEmptyCSharpScript
 
     // live check2
     /// new check
+    /// gchfjygyj,fyjfjuf
     
 }
