@@ -76,6 +76,15 @@ namespace URTC.Editor
             // Use Path.GetDirectoryName for cross-platform robust path handling
             projectPath = System.IO.Path.GetDirectoryName(Application.dataPath);
 
+            // Load persisted values
+            userEmail = EditorPrefs.GetString("URTC_Email", "");
+            sessionID = EditorPrefs.GetString("URTC_SessionID", "");
+            userID = EditorPrefs.GetString("URTC_UserID", "");
+            currentProjectID = EditorPrefs.GetString("URTC_ProjectID", "");
+            currentRepoURL = EditorPrefs.GetString("URTC_RepoURL", "");
+            token = EditorPrefs.GetString("URTC_JoinToken", "");
+            githubToken = EditorPrefs.GetString("URTC_GitHubToken", "");
+
             if (!string.IsNullOrEmpty(userEmail))
             {
                 gitHelper = new GitHelper(userEmail.Split('@')[0], userEmail);
@@ -87,6 +96,9 @@ namespace URTC.Editor
             GUILayout.Space(10);
             GUILayout.Label("URTC Collaboration Panel", EditorStyles.boldLabel);
             GUILayout.Space(10);
+
+            // Save values as they change
+            EditorGUI.BeginChangeCheck();
 
             currentMode = (PanelMode)GUILayout.Toolbar((int)currentMode, new string[] { "Owner", "Collaborator" });
             GUILayout.Space(10);
@@ -111,11 +123,27 @@ namespace URTC.Editor
                     break;
             }
 
+            if (EditorGUI.EndChangeCheck())
+            {
+                SavePrefs();
+            }
+
             GUILayout.Space(20);
             if (!string.IsNullOrEmpty(currentRepoURL) && GUILayout.Button("Open Repository"))
             {
                 Application.OpenURL(currentRepoURL);
             }
+        }
+
+        private void SavePrefs()
+        {
+            EditorPrefs.SetString("URTC_Email", userEmail);
+            EditorPrefs.SetString("URTC_SessionID", sessionID);
+            EditorPrefs.SetString("URTC_UserID", userID);
+            EditorPrefs.SetString("URTC_ProjectID", currentProjectID);
+            EditorPrefs.SetString("URTC_RepoURL", currentRepoURL);
+            EditorPrefs.SetString("URTC_JoinToken", token);
+            EditorPrefs.SetString("URTC_GitHubToken", githubToken);
         }
 
         #region Owner Panel

@@ -185,7 +185,7 @@ namespace URTC.Editor
                 var mainBranch = repo.Branches["main"] ?? repo.CreateBranch("main", repo.Head.Tip);
                 
                 // Checkout main branch
-                Commands.Checkout(repo, "main");
+                Commands.Checkout(repo, "main", new CheckoutOptions { CheckoutStrategy = CheckoutStrategy.Force });
                 
                 Debug.Log("[GitHelper] Switched to 'main' branch successfully");
                 return true;
@@ -324,7 +324,7 @@ namespace URTC.Editor
 
                 using var repo = new Repository(RepositoryPath);
                 
-                // Setup pull options with credentials
+                // Setup pull options with credentials and force checkout strategy
                 var pullOptions = new PullOptions
                 {
                     FetchOptions = new FetchOptions
@@ -335,6 +335,13 @@ namespace URTC.Editor
                                 Username = username,
                                 Password = password
                             }
+                    },
+                    MergeOptions = new MergeOptions
+                    {
+                        CheckoutOptions = new CheckoutOptions
+                        {
+                            CheckoutStrategy = CheckoutStrategy.Force
+                        }
                     }
                 };
 
@@ -380,12 +387,31 @@ namespace URTC.Editor
                 if (repo.Head.FriendlyName != branchName)
                 {
                     Debug.Log($"[GitHelper] Switching to branch '{branchName}' before pulling.");
-                    Commands.Checkout(repo, branchName);
+                    Commands.Checkout(repo, branchName, new CheckoutOptions { CheckoutStrategy = CheckoutStrategy.Force });
                 }
 
                 // Pull the changes
                 var signature = new Signature(Author.Name, Author.Email, DateTime.Now);
-                Commands.Pull(repo, signature, pullOptions);
+                try
+                {
+                    Commands.Pull(repo, signature, pullOptions);
+                }
+                catch (Exception pullEx) when (pullEx.Message.Contains("conflicts prevent checkout"))
+                {
+                    Debug.LogWarning($"[GitHelper] Standard pull failed due to conflicts. Attempting Hard Reset to sync with remote...");
+                    
+                    // Get the remote branch again to ensure we have the latest Tip after fetch (which Pull does)
+                    var remoteBranch = repo.Branches[$"{remoteName}/{branchName}"];
+                    if (remoteBranch != null)
+                    {
+                        repo.Reset(ResetMode.Hard, remoteBranch.Tip);
+                        Debug.Log($"[GitHelper] Successfully synchronized via Hard Reset to {remoteName}/{branchName}");
+                    }
+                    else
+                    {
+                        throw new Exception($"Could not find remote branch {remoteName}/{branchName} for hard reset fallback.");
+                    }
+                }
                 
                 Debug.Log($"[GitHelper] Successfully pulled from '{remoteName}'");
                 return true;
