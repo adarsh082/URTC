@@ -45,7 +45,6 @@ namespace URTC.Editor
         private string userEmail = "";
         private string sessionID = "";
         private string userID = "";
-        private string githubUsername = ""; // Added to store actual GitHub username
         private bool isLoading = false;
         private string statusMessage = "";
 
@@ -79,8 +78,7 @@ namespace URTC.Editor
 
             if (!string.IsNullOrEmpty(userEmail))
             {
-                string username = string.IsNullOrEmpty(githubUsername) ? userEmail.Split('@')[0] : githubUsername;
-                gitHelper = new GitHelper(username, userEmail);
+                gitHelper = new GitHelper(userEmail.Split('@')[0], userEmail);
             }
         }
 
@@ -186,11 +184,7 @@ namespace URTC.Editor
                 return;
             }
 
-            // Trim and lowercase to prevent case-sensitivity issues
-            string cleanOwnerEmail = userEmail.Trim().ToLower();
-            string cleanCollabEmail = collaboratorEmail.Trim().ToLower();
-
-            string jsonData = "{\"owner_email\":\"" + cleanOwnerEmail + "\",\"collaborator_email\":\"" + cleanCollabEmail + "\",\"project_id\":\"" + currentProjectID + "\"}";
+            string jsonData = "{\"owner_email\":\"" + userEmail + "\",\"collaborator_email\":\"" + collaboratorEmail + "\",\"project_id\":\"" + currentProjectID + "\"}";
             EditorCoroutineUtility.StartCoroutine(SendAPIRequest(serverURL + "/api/collab/request", jsonData, "POST", (response) => {
                 statusMessage = "Collaboration request sent successfully!";
                 try
@@ -304,9 +298,8 @@ namespace URTC.Editor
                         token = response.token;
                         githubToken = response.github_token;
                         userID = response.user_id;
-                        githubUsername = response.username;
 
-                        gitHelper = new GitHelper(githubUsername, userEmail);
+                        gitHelper = new GitHelper(userEmail.Split('@')[0], userEmail);
 
                         if (!string.IsNullOrEmpty(userID))
                         {
@@ -329,18 +322,13 @@ namespace URTC.Editor
 
         private void StartSimulatedPush()
         {
-            if (string.IsNullOrEmpty(githubUsername))
-            {
-                githubUsername = userEmail.Split('@')[0];
-            }
-
-            if (gitHelper == null) gitHelper = new GitHelper(githubUsername, userEmail);
+            if (gitHelper == null) gitHelper = new GitHelper(userEmail.Split('@')[0], userEmail);
 
             bool success = gitHelper.ExecuteFullGitWorkflow(
                 projectPath,
                 "Initial commit from Unity URTC Panel",
                 currentRepoURL,
-                githubUsername,
+                userEmail.Split('@')[0],
                 githubToken
             );
 
@@ -352,16 +340,10 @@ namespace URTC.Editor
 
         private void StartSimulatedPull()
         {
-            if (string.IsNullOrEmpty(githubUsername))
-            {
-                githubUsername = userEmail.Split('@')[0];
-            }
+            if (gitHelper == null) gitHelper = new GitHelper(userEmail.Split('@')[0], userEmail);
 
-            if (gitHelper == null) gitHelper = new GitHelper(githubUsername, userEmail);
-
-            // Ensure repository path is initialized and remote is added
+            // Essential fix: Ensure repository path is initialized and remote is added
             gitHelper.InitializeRepository(projectPath);
-            
             if (!string.IsNullOrEmpty(currentRepoURL))
             {
                 gitHelper.AddRemote("origin", currentRepoURL);
@@ -370,7 +352,7 @@ namespace URTC.Editor
             bool success = gitHelper.PullFromRemote(
                 "origin",
                 "main",
-                githubUsername,
+                userEmail.Split('@')[0],
                 githubToken
             );
 
