@@ -33,6 +33,14 @@ namespace URTC.Editor
         public string username;
     }
 
+    [System.Serializable]
+    public class CollabRequest
+    {
+        public string owner_email;
+        public string collaborator_email;
+        public string project_id;
+    }
+
     #endregion
 
     public class URTC_Panel : EditorWindow
@@ -79,7 +87,8 @@ namespace URTC.Editor
 
             if (!string.IsNullOrEmpty(userEmail))
             {
-                gitHelper = new GitHelper(userEmail.Split('@')[0], userEmail);
+                string username = string.IsNullOrEmpty(githubUsername) ? userEmail.Split('@')[0] : githubUsername;
+                gitHelper = new GitHelper(username, userEmail);
             }
         }
 
@@ -185,15 +194,38 @@ namespace URTC.Editor
                 return;
             }
 
-            string jsonData = "{\"owner_email\":\"" + userEmail + "\",\"collaborator_email\":\"" + collaboratorEmail + "\",\"project_id\":\"" + currentProjectID + "\"}";
+            if (string.IsNullOrEmpty(currentProjectID))
+            {
+                statusMessage = "Error: Project ID is missing. Please start or join a collaboration first.";
+                return;
+            }
+
+            CollabRequest req = new CollabRequest
+            {
+                owner_email = userEmail,
+                collaborator_email = collaboratorEmail,
+                project_id = currentProjectID
+            };
+
+            string jsonData = JsonUtility.ToJson(req);
             EditorCoroutineUtility.StartCoroutine(SendAPIRequest(serverURL + "/api/collab/request", jsonData, "POST", (response) => {
-                statusMessage = "Collaboration request sent successfully!";
                 try
                 {
                     var resObj = JsonUtility.FromJson<CollaborationResponse>(response);
-                    token = resObj.collab_id;
+                    if (resObj.success)
+                    {
+                        statusMessage = "Collaboration request sent successfully!";
+                        token = resObj.collab_id;
+                    }
+                    else
+                    {
+                        statusMessage = "Error: " + resObj.message;
+                    }
                 }
-                catch { }
+                catch 
+                {
+                    statusMessage = "Collaboration request sent!";
+                }
                 collaboratorEmail = "";
                 Repaint();
             }));
