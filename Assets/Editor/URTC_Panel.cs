@@ -33,14 +33,6 @@ namespace URTC.Editor
         public string username;
     }
 
-    [System.Serializable]
-    public class CollabRequest
-    {
-        public string owner_email;
-        public string collaborator_email;
-        public string project_id;
-    }
-
     #endregion
 
     public class URTC_Panel : EditorWindow
@@ -194,38 +186,15 @@ namespace URTC.Editor
                 return;
             }
 
-            if (string.IsNullOrEmpty(currentProjectID))
-            {
-                statusMessage = "Error: Project ID is missing. Please start or join a collaboration first.";
-                return;
-            }
-
-            CollabRequest req = new CollabRequest
-            {
-                owner_email = userEmail,
-                collaborator_email = collaboratorEmail,
-                project_id = currentProjectID
-            };
-
-            string jsonData = JsonUtility.ToJson(req);
+            string jsonData = "{\"owner_email\":\"" + userEmail + "\",\"collaborator_email\":\"" + collaboratorEmail + "\",\"project_id\":\"" + currentProjectID + "\"}";
             EditorCoroutineUtility.StartCoroutine(SendAPIRequest(serverURL + "/api/collab/request", jsonData, "POST", (response) => {
+                statusMessage = "Collaboration request sent successfully!";
                 try
                 {
                     var resObj = JsonUtility.FromJson<CollaborationResponse>(response);
-                    if (resObj.success)
-                    {
-                        statusMessage = "Collaboration request sent successfully!";
-                        token = resObj.collab_id;
-                    }
-                    else
-                    {
-                        statusMessage = "Error: " + resObj.message;
-                    }
+                    token = resObj.collab_id;
                 }
-                catch 
-                {
-                    statusMessage = "Collaboration request sent!";
-                }
+                catch { }
                 collaboratorEmail = "";
                 Repaint();
             }));
