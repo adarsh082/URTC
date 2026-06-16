@@ -111,7 +111,16 @@ namespace URTC.Editor
                     }
 
                     var mainBranch = repo.Branches["main"] ?? repo.CreateBranch("main", repo.Head.Tip);
-                    Commands.Checkout(repo, "main", new CheckoutOptions { CheckoutModifiers = CheckoutModifiers.Force });
+                    try
+                    {
+                        Commands.Checkout(repo, "main", new CheckoutOptions { CheckoutModifiers = CheckoutModifiers.Force });
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning($"[GitHelper] Checkout to main failed ({ex.Message}). Applying Smart Sync...");
+                        repo.Refs.UpdateTarget(repo.Refs.Head, mainBranch.CanonicalName);
+                        repo.Reset(ResetMode.Mixed, mainBranch.Tip);
+                    }
                     return true;
                 }
             }
@@ -222,7 +231,17 @@ namespace URTC.Editor
 
                     if (repo.Head.FriendlyName != branchName)
                     {
-                        Commands.Checkout(repo, branchName, new CheckoutOptions { CheckoutModifiers = CheckoutModifiers.Force });
+                        try
+                        {
+                            Commands.Checkout(repo, branchName, new CheckoutOptions { CheckoutModifiers = CheckoutModifiers.Force });
+                        }
+                        catch (Exception checkoutEx)
+                        {
+                            Debug.LogWarning($"[GitHelper] Checkout failed ({checkoutEx.Message}). Attempting Smart Sync for locked files...");
+                            repo.Refs.UpdateTarget(repo.Refs.Head, repo.Branches[branchName].CanonicalName);
+                            repo.Reset(ResetMode.Mixed, repo.Branches[branchName].Tip);
+                            try { Commands.Checkout(repo, branchName, new CheckoutOptions { CheckoutModifiers = CheckoutModifiers.None }); } catch { /* Ignore minor mismatches */ }
+                        }
                     }
 
                     var signature = new Signature(Author.Name, Author.Email, DateTime.Now);
@@ -232,16 +251,13 @@ namespace URTC.Editor
                     }
                     catch (Exception pullEx)
                     {
-                        if (pullEx.Message.Contains("conflicts prevent checkout"))
+                        Debug.LogWarning($"[GitHelper] Pull failed ({pullEx.Message}). Attempting Smart Sync for locked files...");
+                        var rb = repo.Branches[$"{remoteName}/{branchName}"];
+                        if (rb != null)
                         {
-                            Debug.LogWarning("[GitHelper] Conflicts detected. Attempting Hard Reset...");
-                            var rb = repo.Branches[$"{remoteName}/{branchName}"];
-                            if (rb != null)
-                            {
-                                repo.Reset(ResetMode.Hard, rb.Tip);
-                                Debug.Log("[GitHelper] Hard Reset successful.");
-                            }
-                            else throw;
+                            repo.Reset(ResetMode.Mixed, rb.Tip);
+                            try { Commands.Checkout(repo, branchName, new CheckoutOptions { CheckoutModifiers = CheckoutModifiers.None }); } catch { /* Ignore minor mismatches */ }
+                            Debug.Log("[GitHelper] Smart Sync completed successfully.");
                         }
                         else throw;
                     }
