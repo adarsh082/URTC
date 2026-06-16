@@ -186,7 +186,11 @@ namespace URTC.Editor
                 return;
             }
 
-            string jsonData = "{\"owner_email\":\"" + userEmail + "\",\"collaborator_email\":\"" + collaboratorEmail + "\",\"project_id\":\"" + currentProjectID + "\"}";
+            // Trim and lowercase to prevent case-sensitivity issues
+            string cleanOwnerEmail = userEmail.Trim().ToLower();
+            string cleanCollabEmail = collaboratorEmail.Trim().ToLower();
+
+            string jsonData = "{\"owner_email\":\"" + cleanOwnerEmail + "\",\"collaborator_email\":\"" + cleanCollabEmail + "\",\"project_id\":\"" + currentProjectID + "\"}";
             EditorCoroutineUtility.StartCoroutine(SendAPIRequest(serverURL + "/api/collab/request", jsonData, "POST", (response) => {
                 statusMessage = "Collaboration request sent successfully!";
                 try
