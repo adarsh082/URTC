@@ -7,7 +7,10 @@ public class NewEmptyCSharpScript
     // live check 1
 
     // live check2
-    /// new check
-    /// gchfjygyj,fyjfjuf
+    // new check
+    // gchfjygyj,fyjfjuf
+    // changes
+
+    //yes
     
 }
