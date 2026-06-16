@@ -4,6 +4,7 @@ using System.Collections;
 using System.Text;
 using UnityEngine.Networking;
 using System;
+using System.IO;
 using System.Collections.Generic;
 
 namespace URTC.Editor
@@ -73,10 +74,9 @@ namespace URTC.Editor
         private void OnEnable()
         {
             projectName = Application.productName;
-            // Use Path.GetDirectoryName for cross-platform robust path handling
-            projectPath = System.IO.Path.GetDirectoryName(Application.dataPath);
+            projectPath = Path.GetDirectoryName(Application.dataPath);
 
-            // Load persisted values
+            // Load persisted values safely
             userEmail = EditorPrefs.GetString("URTC_Email", "");
             sessionID = EditorPrefs.GetString("URTC_SessionID", "");
             userID = EditorPrefs.GetString("URTC_UserID", "");
@@ -87,7 +87,8 @@ namespace URTC.Editor
 
             if (!string.IsNullOrEmpty(userEmail))
             {
-                gitHelper = new GitHelper(userEmail.Split('@')[0], userEmail);
+                string authorName = userEmail.Contains("@") ? userEmail.Split('@')[0] : "User";
+                gitHelper = new GitHelper(authorName, userEmail);
             }
         }
 
@@ -97,7 +98,7 @@ namespace URTC.Editor
             GUILayout.Label("URTC Collaboration Panel", EditorStyles.boldLabel);
             GUILayout.Space(10);
 
-            // Save values as they change
+            // Start tracking changes to save to EditorPrefs
             EditorGUI.BeginChangeCheck();
 
             currentMode = (PanelMode)GUILayout.Toolbar((int)currentMode, new string[] { "Owner", "Collaborator" });
@@ -123,6 +124,7 @@ namespace URTC.Editor
                     break;
             }
 
+            // Save values if any UI field changed
             if (EditorGUI.EndChangeCheck())
             {
                 SavePrefs();
@@ -212,7 +214,9 @@ namespace URTC.Editor
                 return;
             }
 
+            // Restore exact original manual JSON construction
             string jsonData = "{\"owner_email\":\"" + userEmail + "\",\"collaborator_email\":\"" + collaboratorEmail + "\",\"project_id\":\"" + currentProjectID + "\"}";
+            
             EditorCoroutineUtility.StartCoroutine(SendAPIRequest(serverURL + "/api/collab/request", jsonData, "POST", (response) => {
                 statusMessage = "Collaboration request sent successfully!";
                 try
@@ -327,7 +331,8 @@ namespace URTC.Editor
                         githubToken = response.github_token;
                         userID = response.user_id;
 
-                        gitHelper = new GitHelper(userEmail.Split('@')[0], userEmail);
+                        string authorName = userEmail.Contains("@") ? userEmail.Split('@')[0] : "User";
+                        gitHelper = new GitHelper(authorName, userEmail);
 
                         if (!string.IsNullOrEmpty(userID))
                         {
@@ -350,13 +355,14 @@ namespace URTC.Editor
 
         private void StartSimulatedPush()
         {
-            if (gitHelper == null) gitHelper = new GitHelper(userEmail.Split('@')[0], userEmail);
+            string authorName = userEmail.Contains("@") ? userEmail.Split('@')[0] : "User";
+            if (gitHelper == null) gitHelper = new GitHelper(authorName, userEmail);
 
             bool success = gitHelper.ExecuteFullGitWorkflow(
                 projectPath,
                 "Initial commit from Unity URTC Panel",
                 currentRepoURL,
-                userEmail.Split('@')[0],
+                authorName,
                 githubToken
             );
 
@@ -368,7 +374,8 @@ namespace URTC.Editor
 
         private void StartSimulatedPull()
         {
-            if (gitHelper == null) gitHelper = new GitHelper(userEmail.Split('@')[0], userEmail);
+            string authorName = userEmail.Contains("@") ? userEmail.Split('@')[0] : "User";
+            if (gitHelper == null) gitHelper = new GitHelper(authorName, userEmail);
 
             // Essential fix: Ensure repository path is initialized and remote is added
             gitHelper.InitializeRepository(projectPath);
@@ -380,7 +387,7 @@ namespace URTC.Editor
             bool success = gitHelper.PullFromRemote(
                 "origin",
                 "main",
-                userEmail.Split('@')[0],
+                authorName,
                 githubToken
             );
 
