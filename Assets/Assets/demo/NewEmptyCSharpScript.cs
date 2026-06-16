@@ -28,6 +28,4 @@ public class NewEmptyCSharpScript
     //vv
     //check
     //cc
-    //zz
-    
 }
