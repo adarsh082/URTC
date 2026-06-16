@@ -71,19 +71,24 @@ namespace URTC.Editor
             window.Show();
         }
 
+        private string GetPrefKey(string key)
+        {
+            return $"{key}_{Application.dataPath.GetHashCode()}";
+        }
+
         private void OnEnable()
         {
             projectName = Application.productName;
             projectPath = Path.GetDirectoryName(Application.dataPath);
 
             // Load persisted values safely
-            userEmail = EditorPrefs.GetString("URTC_Email", "");
-            sessionID = EditorPrefs.GetString("URTC_SessionID", "");
-            userID = EditorPrefs.GetString("URTC_UserID", "");
-            currentProjectID = EditorPrefs.GetString("URTC_ProjectID", "");
-            currentRepoURL = EditorPrefs.GetString("URTC_RepoURL", "");
-            token = EditorPrefs.GetString("URTC_JoinToken", "");
-            githubToken = EditorPrefs.GetString("URTC_GitHubToken", "");
+            userEmail = EditorPrefs.GetString(GetPrefKey("URTC_Email"), "");
+            sessionID = EditorPrefs.GetString(GetPrefKey("URTC_SessionID"), "");
+            userID = EditorPrefs.GetString(GetPrefKey("URTC_UserID"), "");
+            currentProjectID = EditorPrefs.GetString(GetPrefKey("URTC_ProjectID"), "");
+            currentRepoURL = EditorPrefs.GetString(GetPrefKey("URTC_RepoURL"), "");
+            token = EditorPrefs.GetString(GetPrefKey("URTC_JoinToken"), "");
+            githubToken = EditorPrefs.GetString(GetPrefKey("URTC_GitHubToken"), "");
 
             if (!string.IsNullOrEmpty(userEmail))
             {
