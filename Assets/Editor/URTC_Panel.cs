@@ -347,12 +347,25 @@ namespace URTC.Editor
 
         private void StartSimulatedPull()
         {
-            if (gitHelper == null) gitHelper = new GitHelper(userEmail.Split('@')[0], userEmail);
+            if (string.IsNullOrEmpty(githubUsername))
+            {
+                githubUsername = userEmail.Split('@')[0];
+            }
+
+            if (gitHelper == null) gitHelper = new GitHelper(githubUsername, userEmail);
+
+            // Ensure repository path is initialized and remote is added
+            gitHelper.InitializeRepository(projectPath);
+            
+            if (!string.IsNullOrEmpty(currentRepoURL))
+            {
+                gitHelper.AddRemote("origin", currentRepoURL);
+            }
 
             bool success = gitHelper.PullFromRemote(
                 "origin",
                 "main",
-                userEmail.Split('@')[0],
+                githubUsername,
                 githubToken
             );
 

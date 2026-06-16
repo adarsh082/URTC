@@ -185,7 +185,7 @@ namespace URTC.Editor
                 var mainBranch = repo.Branches["main"] ?? repo.CreateBranch("main", repo.Head.Tip);
                 
                 // Checkout main branch
-                Commands.Checkout(repo, mainBranch);
+                Commands.Checkout(repo, "main");
                 
                 Debug.Log("[GitHelper] Switched to 'main' branch successfully");
                 return true;
@@ -316,6 +316,12 @@ namespace URTC.Editor
         {
             try
             {
+                if (string.IsNullOrEmpty(RepositoryPath))
+                {
+                    Debug.LogError("[GitHelper] Repository path is not set. Cannot pull. Make sure to initialize the repository first.");
+                    return false;
+                }
+
                 using var repo = new Repository(RepositoryPath);
                 
                 // Setup pull options with credentials
@@ -331,6 +337,51 @@ namespace URTC.Editor
                             }
                     }
                 };
+
+                // Check if the branch exists locally
+                var localBranch = repo.Branches[branchName];
+                if (localBranch == null)
+                {
+                    Debug.Log($"[GitHelper] Local branch '{branchName}' not found. Fetching from remote...");
+                    // Fetch to get remote branch info
+                    repo.Network.Fetch(remoteName, new string[] { branchName }, pullOptions.FetchOptions, null);
+                    
+                    var remoteBranch = repo.Branches[$"{remoteName}/{branchName}"];
+                    if (remoteBranch != null)
+                    {
+                        Debug.Log($"[GitHelper] Creating local branch '{branchName}' from '{remoteName}/{branchName}'");
+                        localBranch = repo.CreateBranch(branchName, remoteBranch.Tip);
+                        
+                        // Establish upstream tracking
+                        repo.Branches.Update(localBranch, b =>
+                        {
+                            b.Remote = remoteName;
+                            b.UpstreamBranch = $"refs/heads/{branchName}";
+                        });
+                    }
+                    else
+                    {
+                        Debug.LogError($"[GitHelper] Remote branch '{remoteName}/{branchName}' not found.");
+                        return false;
+                    }
+                }
+
+                // Ensure tracking is established even if branch exists
+                if (localBranch.RemoteName != remoteName)
+                {
+                     repo.Branches.Update(localBranch, b =>
+                     {
+                         b.Remote = remoteName;
+                         b.UpstreamBranch = $"refs/heads/{branchName}";
+                     });
+                }
+
+                // Ensure we are on the branch we want to pull
+                if (repo.Head.FriendlyName != branchName)
+                {
+                    Debug.Log($"[GitHelper] Switching to branch '{branchName}' before pulling.");
+                    Commands.Checkout(repo, branchName);
+                }
 
                 // Pull the changes
                 var signature = new Signature(Author.Name, Author.Email, DateTime.Now);
