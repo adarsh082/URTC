@@ -2,6 +2,7 @@ using LibGit2Sharp;
 using System;
 using UnityEngine;
 using System.Linq;
+using System.IO;
 
 namespace URTC.Editor
 {
@@ -49,7 +50,13 @@ namespace URTC.Editor
                     
                     foreach (var entry in status)
                     {
-                        if (entry.State != FileStatus.Ignored)
+                        string fullPath = Path.Combine(repo.Info.WorkingDirectory, entry.FilePath);
+                        if (!File.Exists(fullPath) && !Directory.Exists(fullPath))
+                        {
+                            repo.Index.Remove(entry.FilePath);
+                            count++;
+                        }
+                        else if (entry.State != FileStatus.Ignored)
                         {
                             repo.Index.Add(entry.FilePath);
                             count++;
