@@ -74,7 +74,19 @@ namespace URTC.Editor
 
         private string GetPrefKey(string key)
         {
-            return $"{key}_{Application.dataPath.GetHashCode()}";
+            // Use a stable custom hash of the path instead of GetHashCode() which can change between sessions
+            string path = Application.dataPath.Replace("\\", "/").ToLower();
+            long hash = 0;
+            for (int i = 0; i < path.Length; i++) {
+                hash = 31 * hash + path[i];
+            }
+            return $"URTC_{key}_{hash}";
+        }
+
+        private void OnLostFocus()
+        {
+            // Force save whenever the window loses focus (e.g. clicking a file in Project window)
+            SavePrefs();
         }
 
         private void OnEnable()
@@ -83,6 +95,7 @@ namespace URTC.Editor
             projectPath = Path.GetDirectoryName(Application.dataPath);
 
             // Load persisted values safely
+            currentMode = (PanelMode)EditorPrefs.GetInt(GetPrefKey("PanelMode"), 0);
             userEmail = EditorPrefs.GetString(GetPrefKey("URTC_Email"), "");
             sessionID = EditorPrefs.GetString(GetPrefKey("URTC_SessionID"), "");
             userID = EditorPrefs.GetString(GetPrefKey("URTC_UserID"), "");
@@ -146,6 +159,7 @@ namespace URTC.Editor
 
         private void SavePrefs()
         {
+            EditorPrefs.SetInt(GetPrefKey("PanelMode"), (int)currentMode);
             EditorPrefs.SetString(GetPrefKey("URTC_Email"), userEmail);
             EditorPrefs.SetString(GetPrefKey("URTC_SessionID"), sessionID);
             EditorPrefs.SetString(GetPrefKey("URTC_UserID"), userID);
@@ -211,6 +225,18 @@ namespace URTC.Editor
                     statusMessage = "Pushing changes...";
                     StartSimulatedPush();
                 }
+
+                if (GUILayout.Button("Pull Changes from GitHub"))
+                {
+                    statusMessage = "Pulling latest changes...";
+                    StartSimulatedPull();
+                }
+
+                if (GUILayout.Button("Refresh Project Assets"))
+                {
+                    AssetDatabase.Refresh();
+                    statusMessage = "Project assets refreshed.";
+                }
             }
         }
 
@@ -263,6 +289,12 @@ namespace URTC.Editor
                 {
                     statusMessage = "Pulling latest changes...";
                     StartSimulatedPull();
+                }
+
+                if (GUILayout.Button("Refresh Project Assets"))
+                {
+                    AssetDatabase.Refresh();
+                    statusMessage = "Project assets refreshed.";
                 }
             }
         }
