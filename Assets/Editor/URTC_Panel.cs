@@ -403,7 +403,10 @@ namespace URTC.Editor
             );
 
             if (success)
+            {
                 statusMessage = "Latest changes pulled from GitHub.";
+                AssetDatabase.Refresh();
+            }
             else
                 statusMessage = "Error: Failed to pull changes. Check Console.";
         }
