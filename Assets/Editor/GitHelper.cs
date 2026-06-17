@@ -203,7 +203,13 @@ namespace URTC.Editor
         {
             try
             {
-                if (string.IsNullOrEmpty(RepositoryPath)) return false;
+                if (string.IsNullOrEmpty(RepositoryPath)) 
+                {
+                    Debug.LogError("[GitHelper] RepositoryPath is null or empty.");
+                    return false;
+                }
+
+                Debug.Log($"[GitHelper] Starting Pull from {remoteName}/{branchName}");
 
                 using (var repo = new Repository(RepositoryPath))
                 {
@@ -216,64 +222,59 @@ namespace URTC.Editor
                         },
                         MergeOptions = new MergeOptions
                         {
-                            FileConflictStrategy = CheckoutFileConflictStrategy.Normal // or omit this block if it causes issues, but we want forced merging.  Actually, LibGit2Sharp usually expects CheckoutNotifyFlags or similar. Let's simplify and rely on the Hard Reset if it fails.
+                            FileConflictStrategy = CheckoutFileConflictStrategy.Normal
                         }
                     };
 
                     var localBranch = repo.Branches[branchName];
                     if (localBranch == null)
                     {
+                        Debug.Log($"[GitHelper] Local branch {branchName} not found. Fetching from remote...");
                         repo.Network.Fetch(remoteName, new string[] { branchName }, pullOptions.FetchOptions, null);
+                        
                         var remoteBranch = repo.Branches[$"{remoteName}/{branchName}"];
                         if (remoteBranch != null)
                         {
+                            Debug.Log($"[GitHelper] Creating local branch {branchName} from {remoteBranch.CanonicalName}");
                             localBranch = repo.CreateBranch(branchName, remoteBranch.Tip);
                             repo.Branches.Update(localBranch, b => {
                                 b.Remote = remoteName;
                                 b.UpstreamBranch = $"refs/heads/{branchName}";
                             });
                         }
-                        else return false;
+                        else 
+                        {
+                            Debug.LogError($"[GitHelper] Remote branch {remoteName}/{branchName} not found after fetch.");
+                            return false;
+                        }
                     }
 
                     if (repo.Head.FriendlyName != branchName)
                     {
+                        Debug.Log($"[GitHelper] Checking out branch {branchName}");
                         try
                         {
                             Commands.Checkout(repo, branchName, new CheckoutOptions { CheckoutModifiers = CheckoutModifiers.Force });
                         }
                         catch (Exception checkoutEx)
                         {
-                            Debug.LogWarning($"[GitHelper] Checkout failed ({checkoutEx.Message}). Attempting Smart Sync for locked files...");
+                            Debug.LogWarning($"[GitHelper] Checkout failed ({checkoutEx.Message}). Attempting Smart Sync...");
                             repo.Refs.UpdateTarget(repo.Refs.Head, repo.Branches[branchName].CanonicalName);
                             repo.Reset(ResetMode.Mixed, repo.Branches[branchName].Tip);
-                            try { Commands.Checkout(repo, branchName, new CheckoutOptions { CheckoutModifiers = CheckoutModifiers.None }); } catch { /* Ignore minor mismatches */ }
                         }
                     }
 
+                    Debug.Log("[GitHelper] Executing Pull/Merge...");
                     var signature = new Signature(Author.Name, Author.Email, DateTime.Now);
-                    try
-                    {
-                        Commands.Pull(repo, signature, pullOptions);
-                    }
-                    catch (Exception pullEx)
-                    {
-                        Debug.LogWarning($"[GitHelper] Pull failed ({pullEx.Message}). Attempting Smart Sync for locked files...");
-                        var rb = repo.Branches[$"{remoteName}/{branchName}"];
-                        if (rb != null)
-                        {
-                            repo.Reset(ResetMode.Mixed, rb.Tip);
-                            try { Commands.Checkout(repo, branchName, new CheckoutOptions { CheckoutModifiers = CheckoutModifiers.None }); } catch { /* Ignore minor mismatches */ }
-                            Debug.Log("[GitHelper] Smart Sync completed successfully.");
-                        }
-                        else throw;
-                    }
+                    Commands.Pull(repo, signature, pullOptions);
+                    Debug.Log("[GitHelper] Pull completed successfully.");
                     return true;
                 }
             }
             catch (Exception ex)
             {
                 Debug.LogError($"[GitHelper] Failed to pull: {ex.Message}");
+                if (ex.InnerException != null) Debug.LogError($"[GitHelper] Inner Exception: {ex.InnerException.Message}");
                 return false;
             }
         }
