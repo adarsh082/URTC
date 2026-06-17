@@ -266,8 +266,25 @@ namespace URTC.Editor
 
                     Debug.Log("[GitHelper] Executing Pull/Merge...");
                     var signature = new Signature(Author.Name, Author.Email, DateTime.Now);
-                    Commands.Pull(repo, signature, pullOptions);
-                    Debug.Log("[GitHelper] Pull completed successfully.");
+                    try
+                    {
+                        Commands.Pull(repo, signature, pullOptions);
+                        Debug.Log("[GitHelper] Pull completed successfully.");
+                    }
+                    catch (Exception pullEx)
+                    {
+                        Debug.LogWarning($"[GitHelper] Standard pull failed ({pullEx.Message}). Attempting Smart Sync (Hard Reset)...");
+                        var remoteBranch = repo.Branches[$"{remoteName}/{branchName}"];
+                        if (remoteBranch != null)
+                        {
+                            repo.Reset(ResetMode.Hard, remoteBranch.Tip);
+                            Debug.Log("[GitHelper] Smart Sync completed successfully.");
+                        }
+                        else 
+                        {
+                            throw new Exception("Could not find remote branch for Smart Sync.", pullEx);
+                        }
+                    }
                     return true;
                 }
             }
