@@ -95,7 +95,6 @@ namespace URTC.Editor
             projectPath = Path.GetDirectoryName(Application.dataPath);
 
             // Load persisted values safely
-            currentMode = (PanelMode)EditorPrefs.GetInt(GetPrefKey("PanelMode"), 0);
             userEmail = EditorPrefs.GetString(GetPrefKey("URTC_Email"), "");
             sessionID = EditorPrefs.GetString(GetPrefKey("URTC_SessionID"), "");
             userID = EditorPrefs.GetString(GetPrefKey("URTC_UserID"), "");
@@ -159,7 +158,6 @@ namespace URTC.Editor
 
         private void SavePrefs()
         {
-            EditorPrefs.SetInt(GetPrefKey("PanelMode"), (int)currentMode);
             EditorPrefs.SetString(GetPrefKey("URTC_Email"), userEmail);
             EditorPrefs.SetString(GetPrefKey("URTC_SessionID"), sessionID);
             EditorPrefs.SetString(GetPrefKey("URTC_UserID"), userID);
