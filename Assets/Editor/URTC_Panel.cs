@@ -46,6 +46,7 @@ namespace URTC.Editor
         private string userEmail = "";
         private string sessionID = "";
         private string userID = "";
+        private string githubUsername = "";
         private bool isLoading = false;
         private string statusMessage = "";
 
@@ -85,6 +86,7 @@ namespace URTC.Editor
             userEmail = EditorPrefs.GetString(GetPrefKey("URTC_Email"), "");
             sessionID = EditorPrefs.GetString(GetPrefKey("URTC_SessionID"), "");
             userID = EditorPrefs.GetString(GetPrefKey("URTC_UserID"), "");
+            githubUsername = EditorPrefs.GetString(GetPrefKey("URTC_GitHubUsername"), "");
             currentProjectID = EditorPrefs.GetString(GetPrefKey("URTC_ProjectID"), "");
             currentRepoURL = EditorPrefs.GetString(GetPrefKey("URTC_RepoURL"), "");
             token = EditorPrefs.GetString(GetPrefKey("URTC_JoinToken"), "");
@@ -92,7 +94,7 @@ namespace URTC.Editor
 
             if (!string.IsNullOrEmpty(userEmail))
             {
-                string authorName = userEmail.Contains("@") ? userEmail.Split('@')[0] : "User";
+                string authorName = !string.IsNullOrEmpty(githubUsername) ? githubUsername : (userEmail.Contains("@") ? userEmail.Split('@')[0] : "User");
                 gitHelper = new GitHelper(authorName, userEmail);
             }
         }
@@ -144,13 +146,14 @@ namespace URTC.Editor
 
         private void SavePrefs()
         {
-            EditorPrefs.SetString("URTC_Email", userEmail);
-            EditorPrefs.SetString("URTC_SessionID", sessionID);
-            EditorPrefs.SetString("URTC_UserID", userID);
-            EditorPrefs.SetString("URTC_ProjectID", currentProjectID);
-            EditorPrefs.SetString("URTC_RepoURL", currentRepoURL);
-            EditorPrefs.SetString("URTC_JoinToken", token);
-            EditorPrefs.SetString("URTC_GitHubToken", githubToken);
+            EditorPrefs.SetString(GetPrefKey("URTC_Email"), userEmail);
+            EditorPrefs.SetString(GetPrefKey("URTC_SessionID"), sessionID);
+            EditorPrefs.SetString(GetPrefKey("URTC_UserID"), userID);
+            EditorPrefs.SetString(GetPrefKey("URTC_GitHubUsername"), githubUsername);
+            EditorPrefs.SetString(GetPrefKey("URTC_ProjectID"), currentProjectID);
+            EditorPrefs.SetString(GetPrefKey("URTC_RepoURL"), currentRepoURL);
+            EditorPrefs.SetString(GetPrefKey("URTC_JoinToken"), token);
+            EditorPrefs.SetString(GetPrefKey("URTC_GitHubToken"), githubToken);
         }
 
         #region Owner Panel
@@ -335,14 +338,17 @@ namespace URTC.Editor
                         token = response.token;
                         githubToken = response.github_token;
                         userID = response.user_id;
+                        githubUsername = response.username;
 
-                        string authorName = userEmail.Contains("@") ? userEmail.Split('@')[0] : "User";
+                        string authorName = !string.IsNullOrEmpty(githubUsername) ? githubUsername : (userEmail.Contains("@") ? userEmail.Split('@')[0] : "User");
                         gitHelper = new GitHelper(authorName, userEmail);
 
                         if (!string.IsNullOrEmpty(userID))
                         {
                             URTC_WebSocketClient.Connect(userID, sessionID);
                         }
+
+                        SavePrefs();
                     }
                     else
                     {
@@ -360,7 +366,7 @@ namespace URTC.Editor
 
         private void StartSimulatedPush()
         {
-            string authorName = userEmail.Contains("@") ? userEmail.Split('@')[0] : "User";
+            string authorName = !string.IsNullOrEmpty(githubUsername) ? githubUsername : (userEmail.Contains("@") ? userEmail.Split('@')[0] : "User");
             if (gitHelper == null) gitHelper = new GitHelper(authorName, userEmail);
 
             bool success = gitHelper.ExecuteFullGitWorkflow(
@@ -379,7 +385,7 @@ namespace URTC.Editor
 
         private void StartSimulatedPull()
         {
-            string authorName = userEmail.Contains("@") ? userEmail.Split('@')[0] : "User";
+            string authorName = !string.IsNullOrEmpty(githubUsername) ? githubUsername : (userEmail.Contains("@") ? userEmail.Split('@')[0] : "User");
             if (gitHelper == null) gitHelper = new GitHelper(authorName, userEmail);
 
             // Essential fix: Ensure repository path is initialized and remote is added
