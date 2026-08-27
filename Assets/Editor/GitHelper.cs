@@ -120,13 +120,12 @@ namespace URTC.Editor
                     var mainBranch = repo.Branches["main"] ?? repo.CreateBranch("main", repo.Head.Tip);
                     try
                     {
-                        Commands.Checkout(repo, "main", new CheckoutOptions { CheckoutModifiers = CheckoutModifiers.Force });
+                        Commands.Checkout(repo, "main");
                     }
                     catch (Exception ex)
                     {
-                        Debug.LogWarning($"[GitHelper] Checkout to main failed ({ex.Message}). Applying Smart Sync...");
-                        repo.Refs.UpdateTarget(repo.Refs.Head, mainBranch.CanonicalName);
-                        repo.Reset(ResetMode.Mixed, mainBranch.Tip);
+                        Debug.LogError($"[GitHelper] Checkout to main failed. Your local files were left unchanged: {ex.Message}");
+                        return false;
                     }
                     return true;
                 }
@@ -254,13 +253,12 @@ namespace URTC.Editor
                         Debug.Log($"[GitHelper] Checking out branch {branchName}");
                         try
                         {
-                            Commands.Checkout(repo, branchName, new CheckoutOptions { CheckoutModifiers = CheckoutModifiers.Force });
+                            Commands.Checkout(repo, branchName);
                         }
                         catch (Exception checkoutEx)
                         {
-                            Debug.LogWarning($"[GitHelper] Checkout failed ({checkoutEx.Message}). Attempting Smart Sync...");
-                            repo.Refs.UpdateTarget(repo.Refs.Head, repo.Branches[branchName].CanonicalName);
-                            repo.Reset(ResetMode.Mixed, repo.Branches[branchName].Tip);
+                            Debug.LogError($"[GitHelper] Checkout failed. Your local files were left unchanged: {checkoutEx.Message}");
+                            return false;
                         }
                     }
 
@@ -273,17 +271,8 @@ namespace URTC.Editor
                     }
                     catch (Exception pullEx)
                     {
-                        Debug.LogWarning($"[GitHelper] Standard pull failed ({pullEx.Message}). Attempting Smart Sync (Hard Reset)...");
-                        var remoteBranch = repo.Branches[$"{remoteName}/{branchName}"];
-                        if (remoteBranch != null)
-                        {
-                            repo.Reset(ResetMode.Hard, remoteBranch.Tip);
-                            Debug.Log("[GitHelper] Smart Sync completed successfully.");
-                        }
-                        else 
-                        {
-                            throw new Exception("Could not find remote branch for Smart Sync.", pullEx);
-                        }
+                        Debug.LogError($"[GitHelper] Pull stopped because it needs manual conflict resolution. Your local files were left unchanged: {pullEx.Message}");
+                        return false;
                     }
                     return true;
                 }

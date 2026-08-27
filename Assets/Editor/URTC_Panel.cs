@@ -34,6 +34,14 @@ namespace URTC.Editor
         public string username;
     }
 
+    [System.Serializable]
+    public class AddCollaboratorRequest
+    {
+        public string owner_email;
+        public string collaborator_email;
+        public string project_id;
+    }
+
     #endregion
 
     public class URTC_Panel : EditorWindow
@@ -42,7 +50,7 @@ namespace URTC.Editor
         private PanelMode currentMode = PanelMode.Owner;
 
         // Common fields
-        private string serverURL = "http://localhost:8000";
+        private string serverURL = URTC_ServerConfiguration.DefaultApiBaseUrl;
         private string userEmail = "";
         private string sessionID = "";
         private string userID = "";
@@ -102,7 +110,9 @@ namespace URTC.Editor
             currentProjectID = EditorPrefs.GetString(GetPrefKey("URTC_ProjectID"), "");
             currentRepoURL = EditorPrefs.GetString(GetPrefKey("URTC_RepoURL"), "");
             token = EditorPrefs.GetString(GetPrefKey("URTC_JoinToken"), "");
-            githubToken = EditorPrefs.GetString(GetPrefKey("URTC_GitHubToken"), "");
+            // GitHub credentials are intentionally memory-only. Re-authenticate after restarting Unity.
+            EditorPrefs.DeleteKey(GetPrefKey("URTC_GitHubToken"));
+            serverURL = URTC_ServerConfiguration.LoadApiBaseUrl();
 
             if (!string.IsNullOrEmpty(userEmail))
             {
@@ -122,6 +132,8 @@ namespace URTC.Editor
 
             currentMode = (PanelMode)GUILayout.Toolbar((int)currentMode, new string[] { "Owner", "Collaborator" });
             GUILayout.Space(10);
+
+            DrawConnectionSettings();
 
             if (!string.IsNullOrEmpty(statusMessage))
             {
@@ -165,23 +177,36 @@ namespace URTC.Editor
             EditorPrefs.SetString(GetPrefKey("URTC_ProjectID"), currentProjectID);
             EditorPrefs.SetString(GetPrefKey("URTC_RepoURL"), currentRepoURL);
             EditorPrefs.SetString(GetPrefKey("URTC_JoinToken"), token);
-            EditorPrefs.SetString(GetPrefKey("URTC_GitHubToken"), githubToken);
+            URTC_ServerConfiguration.SaveApiBaseUrl(serverURL);
         }
 
         #region Owner Panel
 
-        private void DrawOwnerPanel()
+        private void DrawConnectionSettings()
         {
-            GUILayout.Label("Start New Collaboration", EditorStyles.boldLabel);
-            EditorGUILayout.LabelField("Server URL", serverURL);
+            GUILayout.Label("Connection", EditorStyles.boldLabel);
+            serverURL = EditorGUILayout.TextField("Server URL", serverURL);
             userEmail = EditorGUILayout.TextField("Your Email", userEmail);
             sessionID = EditorGUILayout.TextField("Session ID", sessionID);
             userID = EditorGUILayout.TextField("User ID", userID);
 
-            if (GUILayout.Button("1. Login with GitHub"))
+            if (serverURL.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+                !serverURL.Contains("localhost"))
             {
-                Application.OpenURL(serverURL + "/github/login");
+                EditorGUILayout.HelpBox("Use HTTPS for a shared or production server.", MessageType.Warning);
             }
+
+            if (GUILayout.Button("Login with GitHub"))
+            {
+                Application.OpenURL(URTC_ServerConfiguration.NormalizeApiBaseUrl(serverURL) + "/github/login");
+            }
+
+            GUILayout.Space(10);
+        }
+
+        private void DrawOwnerPanel()
+        {
+            GUILayout.Label("Start New Collaboration", EditorStyles.boldLabel);
 
             projectName = EditorGUILayout.TextField("Project Name", projectName);
             projectDescription = EditorGUILayout.TextField("Description (optional)", projectDescription);
@@ -246,8 +271,12 @@ namespace URTC.Editor
                 return;
             }
 
-            // Restore exact original manual JSON construction
-            string jsonData = "{\"owner_email\":\"" + userEmail + "\",\"collaborator_email\":\"" + collaboratorEmail + "\",\"project_id\":\"" + currentProjectID + "\"}";
+            string jsonData = JsonUtility.ToJson(new AddCollaboratorRequest
+            {
+                owner_email = userEmail,
+                collaborator_email = collaboratorEmail,
+                project_id = currentProjectID
+            });
             
             EditorCoroutineUtility.StartCoroutine(SendAPIRequest(serverURL + "/api/collab/request", jsonData, "POST", (response) => {
                 statusMessage = "Collaboration request sent successfully!";
@@ -269,7 +298,6 @@ namespace URTC.Editor
         private void DrawCollaboratorPanel()
         {
             GUILayout.Label("Join Existing Collaboration", EditorStyles.boldLabel);
-            userEmail = EditorGUILayout.TextField("Your Email", userEmail);
             joinToken = EditorGUILayout.TextField("Join Token", joinToken);
 
             GUI.enabled = !isLoading && !string.IsNullOrEmpty(joinToken);
@@ -303,6 +331,7 @@ namespace URTC.Editor
 
         private void StartCollaboration()
         {
+            serverURL = URTC_ServerConfiguration.NormalizeApiBaseUrl(serverURL);
             CollaborationRequest req = new CollaborationRequest
             {
                 project_name = projectName,
@@ -316,6 +345,7 @@ namespace URTC.Editor
 
         private void JoinCollaboration()
         {
+            serverURL = URTC_ServerConfiguration.NormalizeApiBaseUrl(serverURL);
             CollaborationRequest req = new CollaborationRequest
             {
                 user_email = userEmail,
@@ -375,7 +405,7 @@ namespace URTC.Editor
 
                         if (!string.IsNullOrEmpty(userID))
                         {
-                            URTC_WebSocketClient.Connect(userID, sessionID);
+                            URTC_WebSocketClient.Connect(URTC_ServerConfiguration.GetWebSocketUrl(serverURL), userID, sessionID);
                         }
 
                         SavePrefs();
@@ -396,6 +426,12 @@ namespace URTC.Editor
 
         private void StartSimulatedPush()
         {
+            if (string.IsNullOrEmpty(githubToken))
+            {
+                statusMessage = "Error: GitHub credentials are not available. Log in and start or join the collaboration again.";
+                return;
+            }
+
             string authorName = !string.IsNullOrEmpty(githubUsername) ? githubUsername : (userEmail.Contains("@") ? userEmail.Split('@')[0] : "User");
             if (gitHelper == null) gitHelper = new GitHelper(authorName, userEmail);
 
@@ -415,6 +451,12 @@ namespace URTC.Editor
 
         private void StartSimulatedPull()
         {
+            if (string.IsNullOrEmpty(githubToken))
+            {
+                statusMessage = "Error: GitHub credentials are not available. Log in and start or join the collaboration again.";
+                return;
+            }
+
             string authorName = !string.IsNullOrEmpty(githubUsername) ? githubUsername : (userEmail.Contains("@") ? userEmail.Split('@')[0] : "User");
             if (gitHelper == null) gitHelper = new GitHelper(authorName, userEmail);
 
@@ -445,6 +487,7 @@ namespace URTC.Editor
 
         private void OnDestroy()
         {
+            URTC_WebSocketClient.Disconnect();
             EditorCoroutineUtility.StopAllCoroutines();
             EditorUtility.ClearProgressBar();
         }

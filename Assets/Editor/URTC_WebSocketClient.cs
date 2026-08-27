@@ -13,14 +13,13 @@ namespace URTC.Editor
     {
         private static ClientWebSocket webSocket = null;
         private static CancellationTokenSource cancellationTokenSource;
-        private static string serverURL = "ws://localhost:8000/ws";
         private static bool isConnecting = false;
 
         static URTC_WebSocketClient()
         {
         }
 
-        public static async void Connect(string userID, string sessionID)
+        public static async void Connect(string serverURL, string userID, string sessionID)
         {
             if (isConnecting || (webSocket != null && webSocket.State == WebSocketState.Open))
             {
@@ -35,8 +34,7 @@ namespace URTC.Editor
 
             try
             {
-                // Ensure there is no double slash or missing parameter
-                string finalUrl = $"{serverURL}?user_id={userID}";
+                string finalUrl = $"{serverURL}?user_id={Uri.EscapeDataString(userID)}";
                 Debug.Log($"[URTC] Attempting WebSocket connection to: {finalUrl}");
                 
                 Uri serverUri = new Uri(finalUrl);
@@ -65,8 +63,11 @@ namespace URTC.Editor
             {
                 try
                 {
-                    cancellationTokenSource.Cancel();
-                    await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
+                    cancellationTokenSource?.Cancel();
+                    if (webSocket.State == WebSocketState.Open || webSocket.State == WebSocketState.CloseReceived)
+                    {
+                        await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
+                    }
                     webSocket.Dispose();
                     webSocket = null;
                     Debug.Log("[URTC] WebSocket Disconnected");
@@ -102,7 +103,7 @@ namespace URTC.Editor
             }
             catch (Exception ex)
             {
-                if (!cancellationTokenSource.IsCancellationRequested)
+                if (cancellationTokenSource == null || !cancellationTokenSource.IsCancellationRequested)
                 {
                     Debug.LogError($"[URTC] WebSocket Receive Error: {ex.Message}");
                 }
