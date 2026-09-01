@@ -1,14 +1,14 @@
 # URTC Windows compatibility
 
-URTC is an **editor plug-in**, not a player/runtime package. The supported configuration is Windows 10/11 (64-bit) with Unity 6 LTS. The project currently uses Unity Editor `6000.3.5f2`; use that version for the team baseline.
+URTC is an **editor plug-in**, not a player/runtime package. The supported configuration is Windows 10/11 (64-bit) with Unity 6 LTS. The project currently uses Unity Editor `6000.4.1f1`; use that version for the team baseline.
 
-New Unity 6 releases should be tested before the team upgrades. Unity Hub's own version does not affect project compatibility; the installed Unity Editor version does.
+New Unity 6 releases should be tested before the team upgrades. Unity Hub's own version does not affect project compatibility; the installed Unity Editor version does. The plug-in source uses Unity 6 editor APIs that remain compatible across newer Unity 6 patch releases; new major Unity versions always need a fresh import and test.
 
 ## Team setup
 
 1. In Unity Hub, add the directory that contains `Assets`, `Packages`, and `ProjectSettings`:
    `URTC-main-Frontend/URTC-main-clean`.
-2. Install Unity `6000.3.5f2` for consistent team results.
+2. Install Unity `6000.4.1f1` for consistent team results.
 3. Run the Go backend and PostgreSQL on a reachable server.
 4. In **Window > URTC Panel**, set **Server URL** to the backend URL. Use `https://` in shared/production environments; the plug-in automatically uses `wss://` for its WebSocket.
 5. Log in with GitHub, then copy the session ID shown by the callback page into the panel. GitHub credentials remain only in Unity memory and must be refreshed after restarting Unity.
