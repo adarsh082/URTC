@@ -69,6 +69,7 @@ namespace URTC.Editor
 
         // Collaborator fields
         private string joinToken = "";
+        private string collabUserEmail = ""; // collaborator's own email — used in Collaborator tab
         private string githubToken = "";
         private GitHelper gitHelper;
 
@@ -110,6 +111,7 @@ namespace URTC.Editor
             currentProjectID = EditorPrefs.GetString(GetPrefKey("URTC_ProjectID"), "");
             currentRepoURL = EditorPrefs.GetString(GetPrefKey("URTC_RepoURL"), "");
             token = EditorPrefs.GetString(GetPrefKey("URTC_JoinToken"), "");
+            collabUserEmail = EditorPrefs.GetString(GetPrefKey("URTC_CollabEmail"), "");
             // GitHub credentials are intentionally memory-only. Re-authenticate after restarting Unity.
             EditorPrefs.DeleteKey(GetPrefKey("URTC_GitHubToken"));
             serverURL = URTC_ServerConfiguration.LoadApiBaseUrl();
@@ -177,6 +179,7 @@ namespace URTC.Editor
             EditorPrefs.SetString(GetPrefKey("URTC_ProjectID"), currentProjectID);
             EditorPrefs.SetString(GetPrefKey("URTC_RepoURL"), currentRepoURL);
             EditorPrefs.SetString(GetPrefKey("URTC_JoinToken"), token);
+            EditorPrefs.SetString(GetPrefKey("URTC_CollabEmail"), collabUserEmail);
             URTC_ServerConfiguration.SaveApiBaseUrl(serverURL);
         }
 
@@ -298,9 +301,18 @@ namespace URTC.Editor
         private void DrawCollaboratorPanel()
         {
             GUILayout.Label("Join Existing Collaboration", EditorStyles.boldLabel);
+
+            // FIX: Collaborators need their own email field — they may not have gone through
+            // the GitHub login flow in this project yet, so userEmail (Connection Settings) could be empty.
+            collabUserEmail = EditorGUILayout.TextField("Your Email", collabUserEmail);
             joinToken = EditorGUILayout.TextField("Join Token", joinToken);
 
-            GUI.enabled = !isLoading && !string.IsNullOrEmpty(joinToken);
+            EditorGUILayout.HelpBox(
+                "Enter your email and the join token provided by the project owner, then click Join.\n" +
+                "Note: You must Join each Unity session before pulling (GitHub token is session-only).",
+                MessageType.Info);
+
+            GUI.enabled = !isLoading && !string.IsNullOrEmpty(joinToken) && !string.IsNullOrEmpty(collabUserEmail);
             if (GUILayout.Button(isLoading ? "Joining..." : "Join Collaboration"))
             {
                 JoinCollaboration();
@@ -311,11 +323,21 @@ namespace URTC.Editor
             {
                 GUILayout.Space(10);
                 EditorGUILayout.LabelField("Connected Repository", currentRepoURL);
+
+                if (string.IsNullOrEmpty(githubToken))
+                {
+                    EditorGUILayout.HelpBox(
+                        "GitHub token not available. Join the collaboration first to enable pull.",
+                        MessageType.Warning);
+                }
+
+                GUI.enabled = !string.IsNullOrEmpty(githubToken);
                 if (GUILayout.Button("Pull Latest Changes"))
                 {
                     statusMessage = "Pulling latest changes...";
                     StartSimulatedPull();
                 }
+                GUI.enabled = true;
 
                 if (GUILayout.Button("Refresh Project Assets"))
                 {
@@ -346,9 +368,14 @@ namespace URTC.Editor
         private void JoinCollaboration()
         {
             serverURL = URTC_ServerConfiguration.NormalizeApiBaseUrl(serverURL);
+
+            // FIX: Use collabUserEmail (the Collaborator tab's own email field).
+            // Fall back to the top-level userEmail if collabUserEmail is somehow blank.
+            string emailToUse = !string.IsNullOrEmpty(collabUserEmail) ? collabUserEmail : userEmail;
+
             CollaborationRequest req = new CollaborationRequest
             {
-                user_email = userEmail,
+                user_email = emailToUse,
                 token = joinToken
             };
 
@@ -399,6 +426,13 @@ namespace URTC.Editor
                         githubToken = response.github_token;
                         userID = response.user_id;
                         githubUsername = response.username;
+
+                        // If this was a Join, keep collabUserEmail populated and
+                        // set userEmail from the joined email for git author info.
+                        if (isJoin && !string.IsNullOrEmpty(collabUserEmail))
+                        {
+                            userEmail = collabUserEmail;
+                        }
 
                         string authorName = !string.IsNullOrEmpty(githubUsername) ? githubUsername : (userEmail.Contains("@") ? userEmail.Split('@')[0] : "User");
                         gitHelper = new GitHelper(authorName, userEmail);
@@ -453,7 +487,7 @@ namespace URTC.Editor
         {
             if (string.IsNullOrEmpty(githubToken))
             {
-                statusMessage = "Error: GitHub credentials are not available. Log in and start or join the collaboration again.";
+                statusMessage = "Error: GitHub credentials are not available. Please Join the collaboration first (required each Unity session).";
                 return;
             }
 
