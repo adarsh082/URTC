@@ -20,23 +20,40 @@ namespace URTC.Editor
         {
             try
             {
-                // Repository.Discover traverses parent directories to find the .git folder.
-                // This handles the case where the Unity project is inside a cloned repo
-                // (e.g. urtc-server/frontend/) where .git is at the parent level.
+                // Repository.Discover traverses parent directories to find a .git folder.
                 string discovered = null;
                 try { discovered = Repository.Discover(path); } catch { }
 
                 if (!string.IsNullOrEmpty(discovered))
                 {
-                    // Get the actual working directory root (not the .git dir path)
                     using (var tempRepo = new Repository(discovered))
                     {
-                        RepositoryPath = tempRepo.Info.WorkingDirectory;
+                        // Normalize both paths for comparison
+                        string repoRoot = tempRepo.Info.WorkingDirectory
+                            .Replace("\\", "/").TrimEnd('/');
+                        string projectRoot = path
+                            .Replace("\\", "/").TrimEnd('/');
+
+                        if (string.Equals(repoRoot, projectRoot, StringComparison.OrdinalIgnoreCase))
+                        {
+                            // The git root IS our project folder — open it directly.
+                            RepositoryPath = tempRepo.Info.WorkingDirectory;
+                            Debug.Log($"[GitHelper] Opened existing repository at: {RepositoryPath}");
+                        }
+                        else
+                        {
+                            // The git root is a PARENT of our project folder
+                            // (e.g. urtc-server/ when project is urtc-server/frontend/).
+                            // Init a new repo specifically at our project path so
+                            // pulled files land in the right place.
+                            RepositoryPath = Repository.Init(path);
+                            Debug.Log($"[GitHelper] Initialized new repository at project path: {RepositoryPath}");
+                        }
                     }
-                    Debug.Log($"[GitHelper] Discovered existing repository at: {RepositoryPath}");
                 }
                 else
                 {
+                    // No existing git repo found anywhere — init fresh.
                     RepositoryPath = Repository.Init(path);
                     Debug.Log($"[GitHelper] Initialized new repository at: {RepositoryPath}");
                 }
@@ -220,7 +237,7 @@ namespace URTC.Editor
         {
             try
             {
-                if (string.IsNullOrEmpty(RepositoryPath)) 
+                if (string.IsNullOrEmpty(RepositoryPath))
                 {
                     Debug.LogError("[GitHelper] RepositoryPath is null or empty.");
                     return false;
@@ -236,43 +253,38 @@ namespace URTC.Editor
                             new UsernamePasswordCredentials { Username = username, Password = password }
                     };
 
-                    var pullOptions = new PullOptions
-                    {
-                        FetchOptions = fetchOptions,
-                        MergeOptions = new MergeOptions
-                        {
-                            // Always take remote (owner's) version on conflict —
-                            // correct for a collaborator who is pulling updates.
-                            FileConflictStrategy = CheckoutFileConflictStrategy.Theirs
-                        }
-                    };
+                    // Step 1 — Fetch latest from remote
+                    Debug.Log($"[GitHelper] Fetching from {remoteName}...");
+                    string refSpec = $"+refs/heads/{branchName}:refs/remotes/{remoteName}/{branchName}";
+                    repo.Network.Fetch(remoteName, new[] { refSpec }, fetchOptions, null);
 
+                    // Step 2 — Get the remote tracking branch
+                    var remoteBranch = repo.Branches[$"{remoteName}/{branchName}"];
+                    if (remoteBranch == null)
+                    {
+                        Debug.LogError($"[GitHelper] Remote branch {remoteName}/{branchName} not found after fetch.");
+                        return false;
+                    }
+
+                    var signature = new Signature(Author.Name, Author.Email, DateTime.Now);
+
+                    // Step 3 — If local branch doesn't exist yet, create and checkout it
                     var localBranch = repo.Branches[branchName];
                     if (localBranch == null)
                     {
-                        Debug.Log($"[GitHelper] Local branch {branchName} not found. Fetching from remote...");
-                        repo.Network.Fetch(remoteName, new string[] { branchName }, fetchOptions, null);
-                        
-                        var remoteBranch = repo.Branches[$"{remoteName}/{branchName}"];
-                        if (remoteBranch != null)
+                        Debug.Log($"[GitHelper] Creating local branch {branchName} from remote...");
+                        localBranch = repo.CreateBranch(branchName, remoteBranch.Tip);
+                        repo.Branches.Update(localBranch, b =>
                         {
-                            Debug.Log($"[GitHelper] Creating local branch {branchName} from {remoteBranch.CanonicalName}");
-                            localBranch = repo.CreateBranch(branchName, remoteBranch.Tip);
-                            repo.Branches.Update(localBranch, b => {
-                                b.Remote = remoteName;
-                                b.UpstreamBranch = $"refs/heads/{branchName}";
-                            });
-                        }
-                        else 
-                        {
-                            Debug.LogError($"[GitHelper] Remote branch {remoteName}/{branchName} not found after fetch.");
-                            return false;
-                        }
+                            b.Remote = remoteName;
+                            b.UpstreamBranch = $"refs/heads/{branchName}";
+                        });
                     }
 
+                    // Step 4 — Checkout local branch (force to overwrite conflicting local files)
                     if (repo.Head.FriendlyName != branchName)
                     {
-                        Debug.Log($"[GitHelper] Checking out branch {branchName} (force)");
+                        Debug.Log($"[GitHelper] Checking out branch {branchName} (force)...");
                         try
                         {
                             var checkoutOptions = new CheckoutOptions
@@ -283,12 +295,11 @@ namespace URTC.Editor
                         }
                         catch (Exception checkoutEx)
                         {
-                            // "Access is denied" means a DLL (like git2-3f4182d.dll) is locked
-                            // by the running Unity process — safe to ignore and continue pull.
+                            // "Access is denied" = a DLL locked by Unity (git2-*.dll) — safe to ignore.
                             if (checkoutEx.Message.Contains("Access is denied") ||
                                 checkoutEx.Message.Contains("access is denied"))
                             {
-                                Debug.LogWarning($"[GitHelper] Checkout skipped a locked file (DLL in use by Unity): {checkoutEx.Message}. Continuing pull...");
+                                Debug.LogWarning($"[GitHelper] Skipped locked file during checkout (DLL in use): {checkoutEx.Message}");
                             }
                             else
                             {
@@ -302,12 +313,8 @@ namespace URTC.Editor
                         Debug.Log($"[GitHelper] Already on branch {branchName}, skipping checkout.");
                     }
 
-                    Debug.Log("[GitHelper] Executing Pull/Merge...");
-                    var signature = new Signature(Author.Name, Author.Email, DateTime.Now);
-
-                    // Auto-commit any local uncommitted changes before pulling.
-                    // Unity modifies some tracked files (e.g. ProjectSettings) on open —
-                    // these would block the merge if left uncommitted.
+                    // Step 5 — Auto-commit any local uncommitted changes so merge isn't blocked.
+                    // Unity modifies tracked files (e.g. ProjectSettings) when opening a project.
                     try
                     {
                         var repoStatus = repo.RetrieveStatus(new StatusOptions
@@ -317,7 +324,7 @@ namespace URTC.Editor
                         });
                         if (repoStatus.IsDirty)
                         {
-                            Debug.Log("[GitHelper] Local changes detected — auto-committing before pull...");
+                            Debug.Log("[GitHelper] Auto-committing local changes before merge...");
                             Commands.Stage(repo, "*");
                             repo.Commit("Auto-commit: local changes before pull", signature, signature,
                                 new CommitOptions { AllowEmptyCommit = false });
@@ -326,30 +333,47 @@ namespace URTC.Editor
                     }
                     catch (Exception autoEx)
                     {
-                        // If auto-commit fails (e.g. nothing to commit), safe to ignore and continue.
                         Debug.LogWarning($"[GitHelper] Auto-commit skipped: {autoEx.Message}");
                     }
 
+                    // Step 6 — Merge remote branch into local (explicit fetch+merge,
+                    // no tracking info required unlike Commands.Pull).
+                    Debug.Log("[GitHelper] Merging remote changes...");
+                    var mergeOptions = new MergeOptions
+                    {
+                        // Always take remote (owner's) version on conflict.
+                        FileConflictStrategy = CheckoutFileConflictStrategy.Theirs,
+                        MergeFileFavor = MergeFileFavor.Theirs
+                    };
+
                     try
                     {
-                        Commands.Pull(repo, signature, pullOptions);
-                        Debug.Log("[GitHelper] Pull completed successfully.");
+                        var mergeResult = repo.Merge(remoteBranch, signature, mergeOptions);
+                        if (mergeResult.Status == MergeStatus.Conflicts)
+                        {
+                            // Shouldn't happen with Theirs strategy, but handle just in case.
+                            Debug.LogWarning("[GitHelper] Merge had conflicts — remote version was kept.");
+                        }
+                        Debug.Log($"[GitHelper] Pull completed. Status: {mergeResult.Status}");
                     }
-                    catch (Exception pullEx)
+                    catch (Exception mergeEx)
                     {
-                        Debug.LogError($"[GitHelper] Pull failed: {pullEx.Message}");
+                        Debug.LogError($"[GitHelper] Merge failed: {mergeEx.Message}");
                         return false;
                     }
+
                     return true;
                 }
             }
             catch (Exception ex)
             {
                 Debug.LogError($"[GitHelper] Failed to pull: {ex.Message}");
-                if (ex.InnerException != null) Debug.LogError($"[GitHelper] Inner Exception: {ex.InnerException.Message}");
+                if (ex.InnerException != null)
+                    Debug.LogError($"[GitHelper] Inner exception: {ex.InnerException.Message}");
                 return false;
             }
         }
+
 
         public bool ExecuteFullGitWorkflow(string lp, string msg, string url, string user, string pass)
         {
