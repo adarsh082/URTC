@@ -20,8 +20,26 @@ namespace URTC.Editor
         {
             try
             {
-                Debug.Log($"[GitHelper] Initializing/Opening repository at: {path}");
-                RepositoryPath = Repository.Init(path);
+                // Repository.Discover traverses parent directories to find the .git folder.
+                // This handles the case where the Unity project is inside a cloned repo
+                // (e.g. urtc-server/frontend/) where .git is at the parent level.
+                string discovered = null;
+                try { discovered = Repository.Discover(path); } catch { }
+
+                if (!string.IsNullOrEmpty(discovered))
+                {
+                    // Get the actual working directory root (not the .git dir path)
+                    using (var tempRepo = new Repository(discovered))
+                    {
+                        RepositoryPath = tempRepo.Info.WorkingDirectory;
+                    }
+                    Debug.Log($"[GitHelper] Discovered existing repository at: {RepositoryPath}");
+                }
+                else
+                {
+                    RepositoryPath = Repository.Init(path);
+                    Debug.Log($"[GitHelper] Initialized new repository at: {RepositoryPath}");
+                }
                 return true;
             }
             catch (Exception ex)
@@ -212,16 +230,20 @@ namespace URTC.Editor
 
                 using (var repo = new Repository(RepositoryPath))
                 {
+                    var fetchOptions = new FetchOptions
+                    {
+                        CredentialsProvider = (url, user, cred) =>
+                            new UsernamePasswordCredentials { Username = username, Password = password }
+                    };
+
                     var pullOptions = new PullOptions
                     {
-                        FetchOptions = new FetchOptions
-                        {
-                            CredentialsProvider = (url, user, cred) =>
-                                new UsernamePasswordCredentials { Username = username, Password = password }
-                        },
+                        FetchOptions = fetchOptions,
                         MergeOptions = new MergeOptions
                         {
-                            FileConflictStrategy = CheckoutFileConflictStrategy.Normal
+                            // Always take remote (owner's) version on conflict —
+                            // correct for a collaborator who is pulling updates.
+                            FileConflictStrategy = CheckoutFileConflictStrategy.Theirs
                         }
                     };
 
@@ -229,7 +251,7 @@ namespace URTC.Editor
                     if (localBranch == null)
                     {
                         Debug.Log($"[GitHelper] Local branch {branchName} not found. Fetching from remote...");
-                        repo.Network.Fetch(remoteName, new string[] { branchName }, pullOptions.FetchOptions, null);
+                        repo.Network.Fetch(remoteName, new string[] { branchName }, fetchOptions, null);
                         
                         var remoteBranch = repo.Branches[$"{remoteName}/{branchName}"];
                         if (remoteBranch != null)
@@ -250,16 +272,34 @@ namespace URTC.Editor
 
                     if (repo.Head.FriendlyName != branchName)
                     {
-                        Debug.Log($"[GitHelper] Checking out branch {branchName}");
+                        Debug.Log($"[GitHelper] Checking out branch {branchName} (force)");
                         try
                         {
-                            Commands.Checkout(repo, branchName);
+                            var checkoutOptions = new CheckoutOptions
+                            {
+                                CheckoutModifiers = CheckoutModifiers.Force
+                            };
+                            Commands.Checkout(repo, repo.Branches[branchName], checkoutOptions);
                         }
                         catch (Exception checkoutEx)
                         {
-                            Debug.LogError($"[GitHelper] Checkout failed. Your local files were left unchanged: {checkoutEx.Message}");
-                            return false;
+                            // "Access is denied" means a DLL (like git2-3f4182d.dll) is locked
+                            // by the running Unity process — safe to ignore and continue pull.
+                            if (checkoutEx.Message.Contains("Access is denied") ||
+                                checkoutEx.Message.Contains("access is denied"))
+                            {
+                                Debug.LogWarning($"[GitHelper] Checkout skipped a locked file (DLL in use by Unity): {checkoutEx.Message}. Continuing pull...");
+                            }
+                            else
+                            {
+                                Debug.LogError($"[GitHelper] Checkout failed: {checkoutEx.Message}");
+                                return false;
+                            }
                         }
+                    }
+                    else
+                    {
+                        Debug.Log($"[GitHelper] Already on branch {branchName}, skipping checkout.");
                     }
 
                     Debug.Log("[GitHelper] Executing Pull/Merge...");
@@ -271,7 +311,7 @@ namespace URTC.Editor
                     }
                     catch (Exception pullEx)
                     {
-                        Debug.LogError($"[GitHelper] Pull stopped because it needs manual conflict resolution. Your local files were left unchanged: {pullEx.Message}");
+                        Debug.LogError($"[GitHelper] Pull failed: {pullEx.Message}");
                         return false;
                     }
                     return true;
