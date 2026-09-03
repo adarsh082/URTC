@@ -304,6 +304,32 @@ namespace URTC.Editor
 
                     Debug.Log("[GitHelper] Executing Pull/Merge...");
                     var signature = new Signature(Author.Name, Author.Email, DateTime.Now);
+
+                    // Auto-commit any local uncommitted changes before pulling.
+                    // Unity modifies some tracked files (e.g. ProjectSettings) on open —
+                    // these would block the merge if left uncommitted.
+                    try
+                    {
+                        var repoStatus = repo.RetrieveStatus(new StatusOptions
+                        {
+                            IncludeUntracked = false,
+                            Show = StatusShowOption.IndexAndWorkDir
+                        });
+                        if (repoStatus.IsDirty)
+                        {
+                            Debug.Log("[GitHelper] Local changes detected — auto-committing before pull...");
+                            Commands.Stage(repo, "*");
+                            repo.Commit("Auto-commit: local changes before pull", signature, signature,
+                                new CommitOptions { AllowEmptyCommit = false });
+                            Debug.Log("[GitHelper] Auto-commit done.");
+                        }
+                    }
+                    catch (Exception autoEx)
+                    {
+                        // If auto-commit fails (e.g. nothing to commit), safe to ignore and continue.
+                        Debug.LogWarning($"[GitHelper] Auto-commit skipped: {autoEx.Message}");
+                    }
+
                     try
                     {
                         Commands.Pull(repo, signature, pullOptions);
