@@ -206,23 +206,64 @@ namespace URTC.Editor
                 {
                     var branch = repo.Branches[branchName];
                     var remote = repo.Network.Remotes[remoteName];
-                    
+
                     if (branch == null || remote == null) return false;
-                    
+
+                    var credentials = new UsernamePasswordCredentials
+                    {
+                        Username = username,
+                        Password = password
+                    };
+
+                    var fetchOptions = new FetchOptions
+                    {
+                        CredentialsProvider = (url, user, cred) => credentials
+                    };
+
+                    // Fetch remote commits first so we don't lose collaborator history.
+                    // If the remote has extra auto-commits (from collaborator pulls),
+                    // we merge them in before pushing.
+                    try
+                    {
+                        string fetchRefSpec = $"+refs/heads/{branchName}:refs/remotes/{remoteName}/{branchName}";
+                        repo.Network.Fetch(remoteName, new[] { fetchRefSpec }, fetchOptions, null);
+
+                        var remoteBranch = repo.Branches[$"{remoteName}/{branchName}"];
+                        if (remoteBranch != null && repo.Head.Tip != null)
+                        {
+                            bool remoteAhead = !repo.Commits
+                                .QueryBy(new CommitFilter { IncludeReachableFrom = remoteBranch, ExcludeReachableFrom = repo.Head })
+                                .Any() == false;
+
+                            var signature = new Signature(Author.Name, Author.Email, DateTime.Now);
+                            repo.Merge(remoteBranch, signature, new MergeOptions
+                            {
+                                FileConflictStrategy = CheckoutFileConflictStrategy.Ours // owner's files win on conflict
+                            });
+                        }
+                    }
+                    catch (Exception fetchEx)
+                    {
+                        // If fetch/merge fails (e.g. unrelated histories on first push), ignore and force push.
+                        Debug.LogWarning($"[GitHelper] Pre-push fetch skipped: {fetchEx.Message}");
+                    }
+
                     var pushOptions = new PushOptions
                     {
-                        CredentialsProvider = (url, user, cred) =>
-                            new UsernamePasswordCredentials { Username = username, Password = password }
+                        CredentialsProvider = (url, user, cred) => credentials
                     };
-                    
-                    string refSpec = $"{branch.CanonicalName}:{branch.CanonicalName}";
+
+                    // Force push with + prefix — owner is authoritative source of truth.
+                    // This handles cases where remote has extra auto-commits from collaborator pulls.
+                    string refSpec = $"+{branch.CanonicalName}:{branch.CanonicalName}";
                     repo.Network.Push(remote, refSpec, pushOptions);
-                    
-                    repo.Branches.Update(branch, b => {
+
+                    repo.Branches.Update(branch, b =>
+                    {
                         b.Remote = remote.Name;
                         b.UpstreamBranch = branch.CanonicalName;
                     });
-                    
+
                     return true;
                 }
             }
